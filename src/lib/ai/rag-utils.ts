@@ -7,6 +7,7 @@ import { connectToDatabase } from "@/lib/db/mongodb";
 import { loadAIConfig } from "./config";
 import { embedWithOpenRouter, rerankWithOpenRouter, Usage } from "./openrouter";
 import { selectTopK } from "./rerank";
+import { HIDDEN_DOC_STATUSES } from "./status";
 
 // Konfigurasi via environment variables
 const VECTOR_SCORE_THRESHOLD = parseFloat(
@@ -291,6 +292,10 @@ export async function searchDocEmbeddings(query: string): Promise<any[]> {
             numCandidates: Math.max(50, config.candidateTopN * 5),
             limit: config.candidateTopN * 2,
           },
+        },
+        {
+          // Dokumen lama tanpa field status ikut lolos ($nin tidak memfilter field yang hilang).
+          $match: { status: { $nin: HIDDEN_DOC_STATUSES } },
         },
         {
           $project: {

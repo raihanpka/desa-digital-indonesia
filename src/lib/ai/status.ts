@@ -6,10 +6,10 @@
 
 export type DocStatus = "staging" | "production" | "rejected";
 
-const HIDDEN_STATUSES: ReadonlyArray<string> = ["staging", "rejected"];
+export const HIDDEN_DOC_STATUSES: string[] = ["staging", "rejected"];
 
 /** True jika dokumen boleh dipakai dalam pencarian chatbot. */
 export function isServableDoc(status: unknown): boolean {
   if (status === undefined || status === null) return true;
-  return !HIDDEN_STATUSES.includes(String(status));
+  return !HIDDEN_DOC_STATUSES.includes(String(status));
 }
