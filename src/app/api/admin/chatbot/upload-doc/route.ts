@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongodb";
 import { generateEmbeddings } from "@/lib/ai/rag-utils";
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
     const results = [];
     const documentsToInsert = []; // Array penampung untuk insertMany
     const sourceName = customSource || file.name;
+    // Satu unggahan = satu versi. Dokumen baru masuk staging sampai dipromosikan.
+    const version = randomUUID();
 
     // Proses per halaman
     for (let i = 0; i < pageTexts.length; i++) {
@@ -74,6 +77,8 @@ export async function POST(req: NextRequest) {
         source: sourceName,
         content: content,
         embedding_vector: vector,
+        status: "staging",
+        version,
         metadata: {
           type: "document",
           page: i + 1,
