@@ -9,7 +9,8 @@
     "lint": "eslint",
     "api": "json-server --watch api/db.json --port 3001",
     "ingest:documents": "tsx src/scripts/ingest-documents.ts",
-    "ingest:database": "tsx src/scripts/ingest-database.ts"
+    "ingest:database": "tsx src/scripts/ingest-database.ts",
+    "promote:staging": "tsx src/scripts/promote-staging.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.15",
