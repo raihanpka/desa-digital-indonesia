@@ -4,18 +4,13 @@
 // ==================================================================
 
 import { connectToDatabase } from "@/lib/db/mongodb";
+import { loadAIConfig } from "./config";
+import { embedWithOpenRouter, rerankWithOpenRouter, Usage } from "./openrouter";
+import { selectTopK } from "./rerank";
 
 // Konfigurasi via environment variables
-const OLLAMA_BASE_URL =
-  process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
-const OLLAMA_EMBED_MODEL =
-  process.env.OLLAMA_EMBED_MODEL || "mxbai-embed-large:latest";
 const VECTOR_SCORE_THRESHOLD = parseFloat(
   process.env.VECTOR_SCORE_THRESHOLD || "0.7"
-);
-const OLLAMA_TIMEOUT_MS = parseInt(
-  process.env.OLLAMA_TIMEOUT_MS || "30000",
-  10
 );
 
 // Types
@@ -108,18 +103,30 @@ export function normalizeRole(role: string): UserRole {
 // Embedding generation
 
 export async function generateEmbeddings(text: string): Promise<number[]> {
+  const config = loadAIConfig();
+  if (config.embeddingProvider === "openrouter") {
+    const { vector } = await embedWithOpenRouter(text, config);
+    return vector;
+  }
+  return generateOllamaEmbeddings(text, config);
+}
+
+async function generateOllamaEmbeddings(
+  text: string,
+  config: ReturnType<typeof loadAIConfig>
+): Promise<number[]> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/embed`, {
+    const response = await fetch(`${config.ollamaBaseUrl}/api/embed`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Bypass-Tunnel-Reminder": "true",
         "ngrok-skip-browser-warning": "true",
       },
-      body: JSON.stringify({ model: OLLAMA_EMBED_MODEL, input: text }),
+      body: JSON.stringify({ model: config.embeddingModel, input: text }),
       signal: controller.signal,
     });
 
@@ -140,7 +147,7 @@ export async function generateEmbeddings(text: string): Promise<number[]> {
   } catch (error: any) {
     if (error?.name === "AbortError") {
       console.error(
-        `[generateEmbeddings] Timeout setelah ${OLLAMA_TIMEOUT_MS}ms`
+        `[generateEmbeddings] Timeout setelah ${config.timeoutMs}ms`
       );
     } else {
       console.error("[generateEmbeddings] Gagal:", error?.message ?? error);
@@ -257,14 +264,23 @@ export function detectQueryIntent(query: string): QueryIntent {
 
 // Search: doc_embeddings
 
+function logUsage(stage: string, usage: Usage) {
+  console.log(
+    `[usage] ${stage} tokens=${usage.totalTokens ?? "-"} cost=${usage.cost ?? "-"}`
+  );
+}
+
 export async function searchDocEmbeddings(query: string): Promise<any[]> {
   if (!query) return [];
 
   try {
     const db = await connectToDatabase();
+    const config = loadAIConfig();
     const queryVector = await generateEmbeddings(query);
 
-    const results = await db
+    // Tahap 1: ANN mengambil N kandidat (CANDIDATE_TOP_N). Limit dilebihkan
+    // karena dokumen staging dan rejected disaring setelah ANN.
+    const candidates = await db
       .collection("doc_embeddings")
       .aggregate([
         {
@@ -272,8 +288,8 @@ export async function searchDocEmbeddings(query: string): Promise<any[]> {
             index: "vector_index",
             path: "embedding_vector",
             queryVector,
-            numCandidates: 50,
-            limit: 5,
+            numCandidates: Math.max(50, config.candidateTopN * 5),
+            limit: config.candidateTopN * 2,
           },
         },
         {
@@ -285,9 +301,31 @@ export async function searchDocEmbeddings(query: string): Promise<any[]> {
       ])
       .toArray();
 
-    const valid = results.filter((r) => r.score > VECTOR_SCORE_THRESHOLD);
-    console.log(`[searchDocEmbeddings] Ditemukan ${valid.length} hasil valid`);
-    return valid;
+    const valid = candidates.filter((r) => r.score > VECTOR_SCORE_THRESHOLD);
+
+    // Tahap 2: reranker menentukan K potongan (FINAL_TOP_K) untuk generator.
+    let rerankResults: { index: number; score: number }[] | null = null;
+    if (config.rerankerEnabled && valid.length > 0) {
+      try {
+        const rr = await rerankWithOpenRouter(
+          query,
+          valid.map((r) => String(r.content ?? r.text ?? JSON.stringify(r))),
+          config.finalTopK,
+          config
+        );
+        logUsage("rerank", rr.usage);
+        rerankResults = rr.results;
+      } catch (rerankError) {
+        // Gagal rerank tidak boleh mengosongkan konteks; pakai urutan ANN.
+        console.error("[searchDocEmbeddings] rerank gagal, pakai urutan ANN:", rerankError);
+      }
+    }
+
+    const selected = selectTopK(valid, rerankResults, config.finalTopK);
+    console.log(
+      `[searchDocEmbeddings] kandidat=${valid.length} terpilih=${selected.length} rerank=${rerankResults !== null}`
+    );
+    return selected;
   } catch (error) {
     console.error("[searchDocEmbeddings] Error:", error);
     return [];
