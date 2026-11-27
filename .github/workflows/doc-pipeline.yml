@@ -1,11 +1,24 @@
 name: Doc Pipeline
 
-# Dipicu oleh backend KMS setelah dokumen tersimpan di staging.
-# Saat ini hanya memeriksa kode dan mencatat version. Belum ada gerbang
-# Gate 1 atau Gate 2, dan tidak ada promosi otomatis.
+# Hanya berjalan untuk perubahan di bagian AI dan saat dokumen baru dipicu backend.
+# Tidak memakai concurrency dan tidak diwajibkan (bukan required check), sehingga
+# pekerjaan rekan di luar bagian AI tidak tertahan.
 on:
   repository_dispatch:
     types: [document-uploaded]
+  push:
+    paths:
+      - "src/lib/ai/**"
+      - "src/app/api/admin/chatbot/**"
+      - "src/scripts/promote-staging.ts"
+      - ".github/workflows/doc-pipeline.yml"
+  pull_request:
+    paths:
+      - "src/lib/ai/**"
+      - "src/app/api/admin/chatbot/**"
+      - "src/scripts/promote-staging.ts"
+      - ".github/workflows/doc-pipeline.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,6 +46,7 @@ jobs:
         run: npx jest src/lib/ai
 
       - name: Catat version dokumen
+        if: github.event_name == 'repository_dispatch'
         env:
           VERSION: ${{ github.event.client_payload.version }}
         run: echo "doc-pipeline untuk version=$VERSION"
