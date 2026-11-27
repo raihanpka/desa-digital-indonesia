@@ -15,8 +15,9 @@ function readArg(name: string): string | undefined {
 async function main() {
   const version = readArg("--version");
   const dryRun = process.argv.includes("--dry-run");
-  if (!version) {
-    console.error("Gunakan --version <uuid>");
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!version || !uuid.test(version)) {
+    console.error("Gunakan --version <uuid> yang valid");
     process.exit(1);
   }
 
