@@ -33,6 +33,8 @@ export async function dispatchDocPipeline(
         event_type: DOC_PIPELINE_EVENT,
         client_payload: { version },
       }),
+      // Batas waktu supaya respons unggahan tidak menggantung.
+      signal: AbortSignal.timeout(5000),
     }
   );
   return { ok: response.status === 204, status: response.status };

@@ -1,7 +1,8 @@
 name: Doc Pipeline
 
 # Dipicu oleh backend KMS setelah dokumen tersimpan di staging.
-# Hanya membaca kode dan artefak; tidak mengubah kode atau konfigurasi repositori.
+# Saat ini hanya memeriksa kode dan mencatat version. Belum ada gerbang
+# Gate 1 atau Gate 2, dan tidak ada promosi otomatis.
 on:
   repository_dispatch:
     types: [document-uploaded]
@@ -9,12 +10,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: doc-pipeline
-  queue: max
-
 jobs:
-  gate:
+  check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,7 +32,7 @@ jobs:
       - name: Unit tests
         run: npx jest src/lib/ai
 
-      - name: Catat versi dokumen
+      - name: Catat version dokumen
         env:
           VERSION: ${{ github.event.client_payload.version }}
         run: echo "doc-pipeline untuk version=$VERSION"
