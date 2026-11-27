@@ -4,6 +4,9 @@
 // ==================================================================
 
 import { connectToDatabase } from "@/lib/db/mongodb";
+import { loadAIConfig } from "./config";
+import { embedWithOpenRouter, rerankWithOpenRouter, Usage } from "./openrouter";
+import { selectTopK } from "./rerank";
 
 // Konfigurasi via environment variables
 const OLLAMA_BASE_URL =
@@ -108,6 +111,15 @@ export function normalizeRole(role: string): UserRole {
 // Embedding generation
 
 export async function generateEmbeddings(text: string): Promise<number[]> {
+  const config = loadAIConfig();
+  if (config.embeddingProvider === "openrouter") {
+    const { vector } = await embedWithOpenRouter(text, config);
+    return vector;
+  }
+  return generateOllamaEmbeddings(text);
+}
+
+async function generateOllamaEmbeddings(text: string): Promise<number[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
 
@@ -257,14 +269,22 @@ export function detectQueryIntent(query: string): QueryIntent {
 
 // Search: doc_embeddings
 
+function logUsage(stage: string, usage: Usage) {
+  console.log(
+    `[usage] ${stage} tokens=${usage.totalTokens ?? "-"} cost=${usage.cost ?? "-"}`
+  );
+}
+
 export async function searchDocEmbeddings(query: string): Promise<any[]> {
   if (!query) return [];
 
   try {
     const db = await connectToDatabase();
+    const config = loadAIConfig();
     const queryVector = await generateEmbeddings(query);
 
-    const results = await db
+    // Tahap 1: ANN mengambil N kandidat (CANDIDATE_TOP_N).
+    const candidates = await db
       .collection("doc_embeddings")
       .aggregate([
         {
@@ -272,8 +292,8 @@ export async function searchDocEmbeddings(query: string): Promise<any[]> {
             index: "vector_index",
             path: "embedding_vector",
             queryVector,
-            numCandidates: 50,
-            limit: 5,
+            numCandidates: Math.max(50, config.candidateTopN * 5),
+            limit: config.candidateTopN,
           },
         },
         {
@@ -285,9 +305,26 @@ export async function searchDocEmbeddings(query: string): Promise<any[]> {
       ])
       .toArray();
 
-    const valid = results.filter((r) => r.score > VECTOR_SCORE_THRESHOLD);
-    console.log(`[searchDocEmbeddings] Ditemukan ${valid.length} hasil valid`);
-    return valid;
+    const valid = candidates.filter((r) => r.score > VECTOR_SCORE_THRESHOLD);
+
+    // Tahap 2: reranker menentukan K potongan (FINAL_TOP_K) untuk generator.
+    let rerankResults = null;
+    if (config.rerankerEnabled && valid.length > 0) {
+      const rr = await rerankWithOpenRouter(
+        query,
+        valid.map((r) => String(r.content ?? r.text ?? JSON.stringify(r))),
+        config.finalTopK,
+        config
+      );
+      logUsage("rerank", rr.usage);
+      rerankResults = rr.results;
+    }
+
+    const selected = selectTopK(valid, rerankResults, config.finalTopK);
+    console.log(
+      `[searchDocEmbeddings] kandidat=${valid.length} terpilih=${selected.length} rerank=${rerankResults !== null}`
+    );
+    return selected;
   } catch (error) {
     console.error("[searchDocEmbeddings] Error:", error);
     return [];
