@@ -1,6 +1,8 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongodb";
 import { generateEmbeddings } from "@/lib/ai/rag-utils";
+import { dispatchDocPipeline } from "@/lib/ai/dispatch";
 import { requireRole } from "@/lib/auth/apiAuth";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
@@ -60,6 +62,8 @@ export async function POST(req: NextRequest) {
     const results = [];
     const documentsToInsert = []; // Array penampung untuk insertMany
     const sourceName = customSource || file.name;
+    // Satu unggahan = satu versi. Dokumen baru masuk staging sampai dipromosikan.
+    const version = randomUUID();
 
     // Proses per halaman
     for (let i = 0; i < pageTexts.length; i++) {
@@ -74,6 +78,8 @@ export async function POST(req: NextRequest) {
         source: sourceName,
         content: content,
         embedding_vector: vector,
+        status: "staging",
+        version,
         metadata: {
           type: "document",
           page: i + 1,
@@ -90,10 +96,25 @@ export async function POST(req: NextRequest) {
       await collection.insertMany(documentsToInsert);
     }
 
+    // Pemicu gerbang. Kegagalan dispatch tidak menggagalkan unggahan:
+    // dokumen tetap di staging dan bisa dipicu ulang.
+    let dispatched = false;
+    if (documentsToInsert.length > 0) {
+      try {
+        const result = await dispatchDocPipeline(version);
+        dispatched = result.ok;
+        if (!result.ok) console.error(`[upload-doc] dispatch gagal status=${result.status}`);
+      } catch (dispatchError) {
+        console.error("[upload-doc] dispatch dilewati:", dispatchError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: `Berhasil mengunggah dan memproses ${results.length} halaman dari ${sourceName}`,
       processed_pages: results.length,
+      version,
+      dispatched,
     });
 
   } catch (error: any) {

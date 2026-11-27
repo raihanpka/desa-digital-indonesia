@@ -1,9 +1,7 @@
 name: Deploy to VPS
 
+# Deploy hanya manual. Tidak berjalan otomatis saat push ke master.
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
 
 jobs:
