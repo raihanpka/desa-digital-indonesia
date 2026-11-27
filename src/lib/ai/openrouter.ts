@@ -89,9 +89,11 @@ export async function rerankWithOpenRouter(
     config.timeoutMs
   );
   const raw: any[] = Array.isArray(data?.results) ? data.results : [];
-  const results: RerankItem[] = raw.map((r) => ({
-    index: r.index,
-    score: r.relevance_score ?? r.score,
-  }));
+  // Buang item yang index-nya bukan integer atau skornya bukan angka hingga.
+  const results: RerankItem[] = raw
+    .map((r) => ({ index: r?.index, score: r?.relevance_score ?? r?.score }))
+    .filter(
+      (r) => Number.isInteger(r.index) && Number.isFinite(r.score)
+    ) as RerankItem[];
   return { results, usage: toUsage(data?.usage) };
 }

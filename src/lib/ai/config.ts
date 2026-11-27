@@ -24,7 +24,9 @@ function readInt(value: string | undefined, fallback: number): number {
 }
 
 export function loadAIConfig(env: NodeJS.ProcessEnv = process.env): AIConfig {
-  const provider = (env.EMBEDDING_PROVIDER || "openrouter").toLowerCase();
+  // Default ollama: vektor di doc_embeddings masih dari mxbai. Pindah ke openrouter
+  // hanya lewat env eksplisit setelah embedding ulang.
+  const provider = (env.EMBEDDING_PROVIDER || "ollama").toLowerCase();
   if (provider !== "ollama" && provider !== "openrouter") {
     throw new Error(`EMBEDDING_PROVIDER tidak dikenal: ${provider}`);
   }
@@ -35,9 +37,10 @@ export function loadAIConfig(env: NodeJS.ProcessEnv = process.env): AIConfig {
       env.EMBEDDING_MODEL ||
       (provider === "openrouter"
         ? "voyageai/voyage-4-lite"
-        : "mxbai-embed-large:latest"),
+        : env.OLLAMA_EMBED_MODEL || "mxbai-embed-large:latest"),
     rerankerModel: env.RERANKER_MODEL || "voyageai/rerank-3-lite",
-    rerankerEnabled: env.RERANKER_ENABLED !== "false",
+    // Mati secara default sampai endpoint rerank OpenRouter diverifikasi.
+    rerankerEnabled: env.RERANKER_ENABLED === "true",
     candidateTopN: readInt(env.CANDIDATE_TOP_N, 20),
     finalTopK: readInt(env.FINAL_TOP_K, 5),
     openrouterBaseUrl: env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",

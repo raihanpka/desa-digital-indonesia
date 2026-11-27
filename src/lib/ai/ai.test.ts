@@ -6,14 +6,21 @@ import { selectTopK } from "./rerank";
 import { embedWithOpenRouter, rerankWithOpenRouter } from "./openrouter";
 
 describe("loadAIConfig", () => {
-  it("memakai OpenRouter dan voyage-4-lite secara default", () => {
-    const c = loadAIConfig({ OPENROUTER_API_KEY: "k" } as any);
+  it("memakai Ollama dan mxbai secara default, reranker mati", () => {
+    const c = loadAIConfig({} as any);
+    expect(c.embeddingProvider).toBe("ollama");
+    expect(c.embeddingModel).toBe("mxbai-embed-large:latest");
+    expect(c.rerankerEnabled).toBe(false);
+    expect(c.candidateTopN).toBe(20);
+    expect(c.finalTopK).toBe(5);
+  });
+
+  it("memakai OpenRouter dan voyage-4-lite hanya jika diminta eksplisit", () => {
+    const c = loadAIConfig({ EMBEDDING_PROVIDER: "openrouter", RERANKER_ENABLED: "true" } as any);
     expect(c.embeddingProvider).toBe("openrouter");
     expect(c.embeddingModel).toBe("voyageai/voyage-4-lite");
     expect(c.rerankerModel).toBe("voyageai/rerank-3-lite");
     expect(c.rerankerEnabled).toBe(true);
-    expect(c.candidateTopN).toBe(20);
-    expect(c.finalTopK).toBe(5);
   });
 
   it("menolak provider yang tidak dikenal", () => {
@@ -45,6 +52,15 @@ describe("selectTopK", () => {
     expect(selectTopK(cands, rr, 2)).toEqual(["c", "d"]);
   });
 
+  it("mengabaikan index non-integer", () => {
+    const rr = [
+      { index: undefined as any, score: 1 },
+      { index: 1.5, score: 0.9 },
+      { index: 2, score: 0.5 },
+    ];
+    expect(selectTopK(cands, rr, 3)).toEqual(["c"]);
+  });
+
   it("mengabaikan index di luar jangkauan dan duplikat", () => {
     const rr = [
       { index: 9, score: 1 },
@@ -56,7 +72,7 @@ describe("selectTopK", () => {
 });
 
 describe("OpenRouter client", () => {
-  const config = loadAIConfig({ OPENROUTER_API_KEY: "test-key" } as any);
+  const config = loadAIConfig({ OPENROUTER_API_KEY: "test-key", EMBEDDING_PROVIDER: "openrouter" } as any);
   const originalFetch = global.fetch;
 
   afterEach(() => {
@@ -93,6 +109,21 @@ describe("OpenRouter client", () => {
     }) as any;
     const r = await rerankWithOpenRouter("q", ["x", "y"], 1, config);
     expect(r.results).toEqual([{ index: 1, score: 0.9 }]);
+  });
+
+  it("membuang item rerank dengan index atau skor tidak valid", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { index: "x", relevance_score: 0.9 },
+          { index: 0, relevance_score: NaN },
+          { index: 1, relevance_score: 0.4 },
+        ],
+      }),
+    }) as any;
+    const r = await rerankWithOpenRouter("q", ["x", "y"], 2, config);
+    expect(r.results).toEqual([{ index: 1, score: 0.4 }]);
   });
 
   it("melempar error jika kunci API tidak ada", async () => {

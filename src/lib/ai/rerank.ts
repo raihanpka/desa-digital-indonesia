@@ -22,7 +22,7 @@ export function selectTopK<T>(
   const ordered: T[] = [];
   const sorted = [...rerankResults].sort((a, b) => b.score - a.score);
   for (const r of sorted) {
-    if (r.index < 0 || r.index >= candidates.length) continue;
+    if (!Number.isInteger(r.index) || r.index < 0 || r.index >= candidates.length) continue;
     if (seen.has(r.index)) continue;
     seen.add(r.index);
     ordered.push(candidates[r.index]);
