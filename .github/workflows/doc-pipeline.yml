@@ -1,0 +1,41 @@
+name: Doc Pipeline
+
+# Dipicu oleh backend KMS setelah dokumen tersimpan di staging.
+# Hanya membaca kode dan artefak; tidak mengubah kode atau konfigurasi repositori.
+on:
+  repository_dispatch:
+    types: [document-uploaded]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doc-pipeline
+  queue: max
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx jest src/lib/ai
+
+      - name: Catat versi dokumen
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+        run: echo "doc-pipeline untuk version=$VERSION"
