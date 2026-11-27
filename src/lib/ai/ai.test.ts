@@ -52,6 +52,10 @@ describe("selectTopK", () => {
     expect(selectTopK(cands, rr, 2)).toEqual(["c", "d"]);
   });
 
+  it("kembali ke urutan ANN jika hasil rerank kosong", () => {
+    expect(selectTopK(cands, [], 2)).toEqual(["a", "b"]);
+  });
+
   it("mengabaikan index non-integer", () => {
     const rr = [
       { index: undefined as any, score: 1 },

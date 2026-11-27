@@ -15,7 +15,8 @@ export function selectTopK<T>(
   rerankResults: RerankItem[] | null,
   k: number
 ): T[] {
-  if (rerankResults === null) {
+  // Tanpa hasil rerank yang valid, pakai urutan ANN; jangan kembalikan kosong.
+  if (rerankResults === null || rerankResults.length === 0) {
     return candidates.slice(0, k);
   }
   const seen = new Set<number>();
@@ -28,5 +29,5 @@ export function selectTopK<T>(
     ordered.push(candidates[r.index]);
     if (ordered.length === k) break;
   }
-  return ordered;
+  return ordered.length > 0 ? ordered : candidates.slice(0, k);
 }

@@ -46,7 +46,7 @@ export function loadAIConfig(env: NodeJS.ProcessEnv = process.env): AIConfig {
     openrouterBaseUrl: env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
     openrouterApiKey: env.OPENROUTER_API_KEY,
     ollamaBaseUrl: env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
-    timeoutMs: readInt(env.AI_TIMEOUT_MS, 30000),
+    timeoutMs: readInt(env.AI_TIMEOUT_MS ?? env.OLLAMA_TIMEOUT_MS, 30000),
   };
 
   if (config.finalTopK > config.candidateTopN) {

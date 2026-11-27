@@ -40,7 +40,7 @@ async function postJson(url: string, key: string, body: unknown, timeoutMs: numb
       const detail = await response.text().catch(() => "");
       throw new Error(`OpenRouter HTTP ${response.status}: ${detail.slice(0, 200)}`);
     }
-    return response.json();
+    return await response.json();
   } finally {
     clearTimeout(timer);
   }
